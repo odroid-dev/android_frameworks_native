@@ -187,7 +187,7 @@ void HwcSidebandAgent::setOmxPTS(sp<GraphicBuffer> activeBuffer) {
     if (activeBuffer != NULL) {
         void* vaddr = 0;
         activeBuffer->lock(activeBuffer->getUsage() | GRALLOC_USAGE_SW_READ_MASK, &vaddr);
-        ALOGD("AML_VIDEO_OVERLAY come in, vaddr: %p", vaddr);
+        //ALOGD("AML_VIDEO_OVERLAY come in, vaddr: %p", vaddr);
         set_omx_pts((char*)vaddr, &mOmxVideoHandle);
         activeBuffer->unlock();
     }
