@@ -2326,6 +2326,10 @@ void SurfaceFlinger::processDisplayHotplugEventsLocked() {
                         "Built-in Screen" : "External Screen";
                 mCurrentState.displays.add(mBuiltinDisplays[displayType], info);
                 mInterceptor->saveDisplayCreation(info);
+                } else {
+#ifdef USE_AML_HW_ACTIVE_MODE
+                setTransactionFlags(eDisplayTransactionNeeded | ePrimaryHotplugTranscation);
+#endif
             }
         } else {
             ALOGV("Removing built in display %d", displayType);
@@ -2598,6 +2602,13 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
      */
 
     if (transactionFlags & eDisplayTransactionNeeded) {
+#ifdef USE_AML_HW_ACTIVE_MODE
+        // deal Primary display hotplug
+        if (transactionFlags & ePrimaryHotplugTranscation) {
+            mEventThread->onHotplugReceived(DisplayDevice::DISPLAY_PRIMARY, true);
+        }
+#endif
+
         processDisplayChangesLocked();
         processDisplayHotplugEventsLocked();
     }

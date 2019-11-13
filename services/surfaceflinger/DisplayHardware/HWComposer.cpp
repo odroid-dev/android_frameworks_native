@@ -289,6 +289,12 @@ std::vector<std::shared_ptr<const HWC2::Display::Config>>
 
     auto& displayData = mDisplayData[displayId];
     auto configs = mDisplayData[displayId].hwcDisplay->getConfigs();
+
+#ifdef USE_AML_HW_ACTIVE_MODE
+    // need to clear configMap to update configs.
+    displayData.configMap.clear();
+#endif
+
     if (displayData.configMap.empty()) {
         for (size_t i = 0; i < configs.size(); ++i) {
             displayData.configMap[i] = configs[i];

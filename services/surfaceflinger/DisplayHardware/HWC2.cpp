@@ -161,25 +161,27 @@ void Device::onHotplug(hwc2_display_t displayId, Connection connection) {
         if (oldDisplay != nullptr && oldDisplay->isConnected()) {
             ALOGI("Hotplug connecting an already connected display."
                     " Clearing old display state.");
-        }
-        mDisplays.erase(displayId);
+            oldDisplay->setConnected(true);
+        } else {
+            mDisplays.erase(displayId);
 
-        DisplayType displayType;
-        auto intError = mComposer->getDisplayType(displayId,
-                reinterpret_cast<Hwc2::IComposerClient::DisplayType *>(
+            DisplayType displayType;
+            auto intError = mComposer->getDisplayType(displayId,
+                    reinterpret_cast<Hwc2::IComposerClient::DisplayType *>(
                         &displayType));
-        auto error = static_cast<Error>(intError);
-        if (error != Error::None) {
-            ALOGE("getDisplayType(%" PRIu64 ") failed: %s (%d). "
-                    "Aborting hotplug attempt.",
-                    displayId, to_string(error).c_str(), intError);
-            return;
-        }
+            auto error = static_cast<Error>(intError);
+            if (error != Error::None) {
+                ALOGE("getDisplayType(%" PRIu64 ") failed: %s (%d). "
+                        "Aborting hotplug attempt.",
+                        displayId, to_string(error).c_str(), intError);
+                return;
+            }
 
-        auto newDisplay = std::make_unique<Display>(
-                *mComposer.get(), mPowerAdvisor, mCapabilities, displayId, displayType);
-        newDisplay->setConnected(true);
-        mDisplays.emplace(displayId, std::move(newDisplay));
+            auto newDisplay = std::make_unique<Display>(
+                    *mComposer.get(), mPowerAdvisor, mCapabilities, displayId, displayType);
+            newDisplay->setConnected(true);
+            mDisplays.emplace(displayId, std::move(newDisplay));
+        }
     } else if (connection == Connection::Disconnected) {
         // The display will later be destroyed by a call to
         // destroyDisplay(). For now we just mark it disconnected.
@@ -454,10 +456,37 @@ Error Display::getDataspaceSaturationMatrix(Dataspace dataspace, android::mat4* 
 
 std::vector<std::shared_ptr<const Display::Config>> Display::getConfigs() const
 {
+#ifdef USE_AML_HW_ACTIVE_MODE
+    ALOGV("[%" PRIu64 "] getConfigs", mId);
+    hwc2_config_t activeConfigId = 0;
+    auto intError = mComposer.getActiveConfig(mId, &activeConfigId);
+    auto error = static_cast<Error>(intError);
+    if (error != Error::None) {
+        ALOGE("[%" PRIu64 "] mGetActiveConfig error", mId);
+    }
+    if (mConfigs.count(activeConfigId) == 0) {
+        ALOGE("[%" PRIu64 "] getActiveConfig returned unknown config %u", mId,
+                activeConfigId);
+    }
+#endif
+
     std::vector<std::shared_ptr<const Config>> configs;
     for (const auto& element : mConfigs) {
+#ifdef USE_AML_HW_ACTIVE_MODE
+    // Skip active configid, need to add to the front of configs.
+        if (element.first == activeConfigId) {
+            continue;
+        }
+#endif
         configs.emplace_back(element.second);
     }
+
+#ifdef USE_AML_HW_ACTIVE_MODE
+    if (mConfigs.count(activeConfigId) != 0) {
+        // Add active config to the front of configs.
+        configs.emplace(configs.begin(), mConfigs.at(activeConfigId));
+    }
+#endif
     return configs;
 }
 
@@ -690,7 +719,7 @@ Error Display::presentOrValidate(uint32_t* outNumTypes, uint32_t* outNumRequests
 // For use by Device
 
 void Display::setConnected(bool connected) {
-    if (!mIsConnected && connected) {
+    if (connected) {
         mComposer.setClientTargetSlotCount(mId);
         if (mType == DisplayType::Physical) {
             loadConfigs();
@@ -741,6 +770,13 @@ void Display::loadConfigs()
                 to_string(error).c_str(), intError);
         return;
     }
+
+#ifdef USE_AML_HW_ACTIVE_MODE
+    // Primary display need update configs when hotplug happens.
+    if (mId == HWC_DISPLAY_PRIMARY) {
+        mConfigs.clear();
+    }
+#endif
 
     for (auto configId : configIds) {
         loadConfig(configId);
